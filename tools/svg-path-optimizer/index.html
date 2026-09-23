@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Path Optimizer & Viewer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col items-center p-4">
+  <div id="ad-slot-header" class="my-4 text-center p-4 bg-gray-100 rounded border border-dashed border-gray-300 text-xs text-gray-500">Sponsored Ad Space</div>
+
+  <main class="w-full max-w-4xl flex flex-col gap-6">
+    <h1 class="text-3xl font-bold text-center text-gray-800">SVG Path Optimizer & Viewer</h1>
+    <p class="text-center text-gray-600">A lightweight browser tool to clean, compress, and instantly preview SVG code and paths without server uploads.</p>
+
+    <section class="grid gap-4 md:grid-cols-2">
+      <div class="flex flex-col gap-2">
+        <label for="svg-input" class="font-medium text-gray-700">Original SVG</label>
+        <textarea id="svg-input" rows="12" class="p-3 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" placeholder="<svg ...>...</svg>"></textarea>
+        <button id="optimize-btn" class="self-start mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Optimize</button>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label class="font-medium text-gray-700">Live Preview</label>
+        <div id="svg-preview" class="p-3 border rounded bg-white flex items-center justify-center min-h-[150px]"></div>
+      </div>
+    </section>
+
+    <section class="flex flex-col gap-2">
+      <label for="svg-output" class="font-medium text-gray-700">Optimized SVG</label>
+      <textarea id="svg-output" rows="8" class="p-3 border rounded focus:outline-none focus:ring-2 focus:ring-green-500 resize-none" readonly></textarea>
+      <div class="flex flex-wrap gap-2">
+        <button data-copy-target="svg-output" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Copy SVG</button>
+        <button id="copy-jsx" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Copy JSX</button>
+        <button id="copy-datauri" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">Copy Data URI</button>
+      </div>
+    </section>
+
+    <section class="text-sm text-gray-600">
+      <h2 class="font-semibold mb-2">Features</h2>
+      <ul class="list-disc list-inside space-y-1">
+        <li>Instant live preview of SVG markup and custom paths</li>
+        <li>Cleans unnecessary XML metadata, comments, and editor junk</li>
+        <li>Minifies path data and rounds decimal numbers for smaller file size</li>
+        <li>One-click copy options for optimized SVG code, JSX, or Data URI</li>
+        <li>100% client-side execution keeping your vector files private</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="text-center text-sm text-gray-500 py-4 mt-8 w-full">
+    Built with <a href="https://n8n.io" target="_blank" rel="noopener" class="text-blue-600 hover:underline font-medium">AI Asset Engine</a>
+  </footer>
+
+  <div id="ad-slot-footer" class="my-4 text-center p-4 bg-gray-100 rounded border border-dashed border-gray-300 text-xs text-gray-500">Sponsored Ad Space</div>
+
+  <script>
+    const svgInput = document.getElementById('svg-input');
+    const svgPreview = document.getElementById('svg-preview');
+    const svgOutput = document.getElementById('svg-output');
+    const optimizeBtn = document.getElementById('optimize-btn');
+    const copyButtons = document.querySelectorAll('[data-copy-target]');
+    const copyJSXBtn = document.getElementById('copy-jsx');
+    const copyDataURIBtn = document.getElementById('copy-datauri');
+
+    function renderPreview(svg) {
+      svgPreview.innerHTML = '';
+      if (!svg.trim()) return;
+      try {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = svg;
+        const el = wrapper.firstElementChild;
+        if (el && el.tagName.toLowerCase() === 'svg') {
+          svgPreview.appendChild(el);
+        } else {
+          svgPreview.textContent = 'Invalid SVG';
+        }
+      } catch (e) {
+        svgPreview.textContent = 'Error rendering SVG';
+      }
+    }
+
+    function minifyNumber(num) {
+      return parseFloat(num).toFixed(2).replace(/\.?0+$/,'');
+    }
+
+    function minifyPathData(d) {
+      return d.replace(/[-+]?\d*\.?\d+(e[-+]?\d+)?/gi, m => minifyNumber(m))
+              .replace(/(\s*,\s*|\s+)/g, ' ')
+              .trim();
+    }
+
+    function cleanSVG(svg) {
+      // Remove XML declaration, comments, metadata, title, desc
+      let cleaned = svg.replace(/<\?xml[^>]*\?>/gi, '')
+                       .replace(/<!--[\s\S]*?-->/g, '')
+                       .replace(/<metadata[\s\S]*?<\/metadata>/gi, '')
+                       .replace(/<(title|desc)[\s\S]*?<\/\1>/gi, '')
+                       .replace(/\s{2,}/g, ' ')
+                       .trim();
+
+      // Minify path data
+      cleaned = cleaned.replace(/<path([^>]*?)d="([^"]+)"([^>]*?)>/gi, (match, p1, d, p3) => {
+        const minD = minifyPathData(d);
+        return `<path${p1}d="${minD}"${p3}>`;
+      });
+
+      // Remove unnecessary spaces around = and within tags
+      cleaned = cleaned.replace(/\s*=\s*/g, '=')
+                       .replace(/>\s+</g, '><')
+                       .replace(/\s{2,}/g, ' ');
+      return cleaned;
+    }
+
+    function toJSX(svg) {
+      // Simple conversion: replace class with className, self-close empty tags
+      return svg.replace(/class=/g, 'className=')
+                .replace(/<([a-z]+)([^>]*)\/>/gi, '<$1$2 />');
+    }
+
+    function toDataURI(svg) {
+      const encoded = encodeURIComponent(svg)
+        .replace(/'/g, "%27")
+        .replace(/"/g, "%22");
+      return `data:image/svg+xml,${encoded}`;
+    }
+
+    function update() {
+      const raw = svgInput.value;
+      renderPreview(raw);
+    }
+
+    svgInput.addEventListener('input', update);
+    update();
+
+    optimizeBtn.addEventListener('click', () => {
+      const raw = svgInput.value;
+      if (!raw.trim()) {
+        svgOutput.value = '';
+        return;
+      }
+      const optimized = cleanSVG(raw);
+      svgOutput.value = optimized;
+      renderPreview(optimized);
+    });
+
+    copyButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetId = btn.getAttribute('data-copy-target');
+        const text = document.getElementById(targetId).value;
+        navigator.clipboard.writeText(text).catch(()=>{});
+      });
+    });
+
+    copyJSXBtn.addEventListener('click', () => {
+      const jsx = toJSX(svgOutput.value);
+      navigator.clipboard.writeText(jsx).catch(()=>{});
+    });
+
+    copyDataURIBtn.addEventListener('click', () => {
+      const uri = toDataURI(svgOutput.value);
+      navigator.clipboard.writeText(uri).catch(()=>{});
+    });
+  </script>
+</body>
+</html>
