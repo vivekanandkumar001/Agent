@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SVG Path Visualizer & Cleaner</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50 min-h-screen flex flex-col">
+
+  <div id="ad-slot-header" class="my-4 text-center p-4 bg-gray-100 rounded border border-dashed border-gray-300 text-xs text-gray-500">Sponsored Ad Space</div>
+
+  <main class="flex-1 container mx-auto p-4 max-w-5xl">
+    <h1 class="text-3xl font-bold text-center mb-2">SVG Path Visualizer & Cleaner</h1>
+    <p class="text-center text-gray-600 mb-6">A fast, client‑side utility to visualize, minify, and clean up inline SVG code and paths directly in your browser.</p>
+
+    <div class="grid md:grid-cols-2 gap-6">
+      <!-- Input Section -->
+      <section class="flex flex-col">
+        <label for="svg-input" class="font-medium mb-2">Paste your SVG code here:</label>
+        <textarea id="svg-input" class="flex-1 resize-none p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[200px]" placeholder="<svg ...>"></textarea>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button id="clean-btn" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Clean SVG</button>
+          <button id="precision-btn" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">Reduce Precision</button>
+          <button id="reset-btn" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition">Reset</button>
+        </div>
+      </section>
+
+      <!-- Preview Section -->
+      <section class="flex flex-col items-center">
+        <div class="w-full h-64 border border-gray-300 rounded bg-white overflow-hidden relative">
+          <div id="svg-container" class="absolute inset-0 flex items-center justify-center"></div>
+        </div>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button id="zoom-in" class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition">Zoom +</button>
+          <button id="zoom-out" class="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition">Zoom −</button>
+          <button id="pan-reset" class="px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700 transition">Reset Pan/Zoom</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Export Section -->
+    <section class="mt-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div class="flex flex-wrap gap-2">
+        <button id="export-svg" class="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 transition">Export SVG</button>
+        <button id="export-jsx" class="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 transition">Export JSX</button>
+        <button id="export-base64" class="px-4 py-2 bg-teal-600 text-white rounded hover:bg-teal-700 transition">Copy Base64</button>
+      </div>
+      <p id="status-msg" class="text-sm text-gray-500"></p>
+    </section>
+  </main>
+
+  <div id="ad-slot-footer" class="my-4 text-center p-4 bg-gray-100 rounded border border-dashed border-gray-300 text-xs text-gray-500">Sponsored Ad Space</div>
+
+  <footer class="text-center text-sm text-gray-500 py-4">
+    Built with <a href="https://n8n.io" target="_blank" rel="noopener" class="text-blue-600 hover:underline font-medium">AI Asset Engine</a>
+  </footer>
+
+  <script>
+    const svgInput = document.getElementById('svg-input');
+    const svgContainer = document.getElementById('svg-container');
+    const statusMsg = document.getElementById('status-msg');
+    let scale = 1;
+    let translate = { x: 0, y: 0 };
+    let isPanning = false;
+    let start = { x: 0, y: 0 };
+
+    function renderSVG(content) {
+      svgContainer.innerHTML = '';
+      if (!content.trim()) return;
+      try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(content, 'image/svg+xml');
+        const svg = doc.querySelector('svg');
+        if (svg) {
+          svg.removeAttribute('width');
+          svg.removeAttribute('height');
+          svg.style.transform = `scale(${scale}) translate(${translate.x}px, ${translate.y}px)`;
+          svg.style.transformOrigin = 'center';
+          svgContainer.appendChild(svg);
+        } else {
+          throw new Error('No <svg> element found.');
+        }
+        statusMsg.textContent = '';
+      } catch (e) {
+        statusMsg.textContent = 'Invalid SVG content.';
+      }
+    }
+
+    function cleanSVG(content) {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(content, 'image/svg+xml');
+      // Remove comments
+      const iterator = doc.createNodeIterator(doc, NodeFilter.SHOW_COMMENT, null);
+      let curNode;
+      while ((curNode = iterator.nextNode())) curNode.parentNode.removeChild(curNode);
+      // Remove metadata, title, desc
+      ['metadata', 'title', 'desc', 'defs'].forEach(tag => {
+        doc.querySelectorAll(tag).forEach(el => el.remove());
+      });
+      // Remove unwanted attributes
+      const allowedAttrs = ['viewBox', 'd', 'fill', 'stroke', 'stroke-width', 'opacity', 'transform', 'style', 'xmlns'];
+      doc.querySelectorAll('*').forEach(el => {
+        [...el.attributes].forEach(attr => {
+          if (!allowedAttrs.includes(attr.name)) el.removeAttribute(attr.name);
+        });
+      });
+      return new XMLSerializer().serializeToString(doc);
+    }
+
+    function reducePrecision(content, digits = 2) {
+      return content.replace(/-?\\d*\\.\\d+/g, match => {
+        return parseFloat(parseFloat(match).toFixed(digits)).toString();
+      });
+    }
+
+    function updatePreview() {
+      renderSVG(svgInput.value);
+    }
+
+    // Event Listeners
+    svgInput.addEventListener('input', updatePreview);
+
+    document.getElementById('clean-btn').addEventListener('click', () => {
+      const cleaned = cleanSVG(svgInput.value);
+      svgInput.value = cleaned;
+      updatePreview();
+    });
+
+    document.getElementById('precision-btn').addEventListener('click', () => {
+      const reduced = reducePrecision(svgInput.value);
+      svgInput.value = reduced;
+      updatePreview();
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      svgInput.value = '';
+      scale = 1;
+      translate = { x: 0, y: 0 };
+      updatePreview();
+    });
+
+    // Zoom Controls
+    document.getElementById('zoom-in').addEventListener('click', () => {
+      scale = Math.min(scale + 0.2, 5);
+      updatePreview();
+    });
+    document.getElementById('zoom-out').addEventListener('click', () => {
+      scale = Math.max(scale - 0.2, 0.2);
+      updatePreview();
+    });
+    document.getElementById('pan-reset').addEventListener('click', () => {
+      scale = 1;
+      translate = { x: 0, y: 0 };
+      updatePreview();
+    });
+
+    // Pan Interaction
+    svgContainer.addEventListener('mousedown', e => {
+      isPanning = true;
+      start = { x: e.clientX - translate.x, y: e.clientY - translate.y };
+    });
+    window.addEventListener('mousemove', e => {
+      if (!isPanning) return;
+      translate.x = e.clientX - start.x;
+      translate.y = e.clientY - start.y;
+      updatePreview();
+    });
+    window.addEventListener('mouseup', () => (isPanning = false));
+
+    // Export Functions
+    function downloadBlob(content, filename, type) {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById('export-svg').addEventListener('click', () => {
+      const cleaned = cleanSVG(svgInput.value);
+      downloadBlob(cleaned, 'cleaned.svg', 'image/svg+xml');
+    });
+
+    document.getElementById('export-jsx').addEventListener('click', () => {
+      let jsx = cleanSVG(svgInput.value);
+      jsx = jsx.replace(/class=/g, 'className=').replace(/([a-z-]+)=/g, (m, p1) => {
+        const camel = p1.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        return `${camel}=`;
+      });
+      downloadBlob(jsx, 'icon.jsx', 'text/plain');
+    });
+
+    document.getElementById('export-base64').addEventListener('click', () => {
+      const cleaned = cleanSVG(svgInput.value);
+      const base64 = btoa(unescape(encodeURIComponent(cleaned)));
+      navigator.clipboard.writeText(`data:image/svg+xml;base64,${base64}`).then(() => {
+        statusMsg.textContent = 'Base64 string copied to clipboard.';
+        setTimeout(() => (statusMsg.textContent = ''), 3000);
+      });
+    });
+
+    // Initial render
+    updatePreview();
+  </script>
+</body>
+</html>
